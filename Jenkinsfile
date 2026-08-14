@@ -5,7 +5,7 @@ pipeline {
         // Docker Hub / Registry Configurations
         IMAGE_NAME = 'django-k8s'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        REGISTRY = 'aditya20266' // <-- Yaha apna Docker Hub username dalein
+        REGISTRY = 'ayushyash71' // <-- Yaha apna Docker Hub username dalein
         FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
         // Kubernetes Configurations
