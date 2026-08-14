@@ -1,6 +1,7 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+# Working directory direct Django project folder pe set kar di
+WORKDIR /app/app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -10,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Direct install bina requirements.txt ke
 RUN pip install --no-cache-dir django psycopg2-binary
 
+# Poora workspace copy hoga
 COPY . /app/
 
 EXPOSE 8000
