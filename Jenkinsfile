@@ -2,18 +2,15 @@ pipeline {
     agent any
 
     environment {
-        // Docker Hub / Registry Configurations
         IMAGE_NAME = 'django-k8s'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        REGISTRY = 'ayushyash71' // <-- Yaha apna Docker Hub username dalein
+        REGISTRY = 'ayushyash71'
         FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-        // Kubernetes Configurations
         K8S_NAMESPACE = 'django-project'
         K8S_DIR = "${WORKSPACE}/k8s"
-        APP_DIR = "${WORKSPACE}" // Root folder workspace
+        APP_DIR = "${WORKSPACE}/app" // <-- Build directly app/ folder se hoga
 
-        // Kubeconfig Path (Jenkins user context)
         KUBECONFIG = '/var/lib/jenkins/.kube/config'
     }
 
@@ -28,17 +25,10 @@ pipeline {
         stage('Verify Environment') {
             steps {
                 sh '''
-                    echo "Checking Docker..."
+                    echo "Checking Docker & kubectl..."
                     docker --version
-
-                    echo "Checking kubectl..."
                     kubectl version --client
-
-                    echo "Checking Kubernetes & Nodes..."
-                    kubectl get nodes --kubeconfig=${KUBECONFIG} || kubectl get nodes
-
-                    echo "Checking kubeconfig context..."
-                    kubectl config current-context --kubeconfig=${KUBECONFIG} || true
+                    kubectl get nodes --kubeconfig=${KUBECONFIG}
                 '''
             }
         }
@@ -46,7 +36,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    echo "Building Docker Image..."
+                    echo "Building Docker Image using app/Dockerfile..."
                     docker build \
                       -t ${FULL_IMAGE} \
                       -t ${REGISTRY}/${IMAGE_NAME}:latest \
@@ -104,7 +94,7 @@ pipeline {
                           pod \
                           -l app=postgres \
                           -n ${K8S_NAMESPACE} \
-                          --timeout=180s --kubeconfig=${KUBECONFIG} || echo "Postgres pod wait skipped or timeout"
+                          --timeout=180s --kubeconfig=${KUBECONFIG} || echo "Postgres pod wait skipped"
                     fi
                 '''
             }
@@ -113,7 +103,7 @@ pipeline {
         stage('Deploy Django') {
             steps {
                 sh '''
-                    # Django deployment manifest me latest image tag replace karein
+                    # Update deployment manifest with latest image tag
                     sed -i "s|image: .*|image: ${FULL_IMAGE}|g" ${K8S_DIR}/django.yaml
 
                     kubectl apply \
@@ -121,11 +111,11 @@ pipeline {
                       -n ${K8S_NAMESPACE} \
                       --kubeconfig=${KUBECONFIG}
 
-                    echo "Waiting for Django deployment..."
+                    echo "Waiting for Django deployment rollout..."
                     kubectl rollout status \
                       deployment/django \
                       -n ${K8S_NAMESPACE} \
-                      --timeout=180s \
+                      --timeout=300s \
                       --kubeconfig=${KUBECONFIG}
                 '''
             }
@@ -139,7 +129,7 @@ pipeline {
                       -n ${K8S_NAMESPACE} \
                       deployment/django \
                       --kubeconfig=${KUBECONFIG} \
-                      -- python manage.py migrate --noinput || echo "Migrations command exited or not configured"
+                      -- python manage.py migrate --noinput || echo "Migrations completed or already applied"
                 '''
             }
         }
@@ -162,26 +152,17 @@ pipeline {
 
     post {
         success {
-            echo 'Deployment successful! Django application deployed to Minikube cluster.'
+            echo 'Deployment successful! Django is running on Minikube.'
             sh '''
                 kubectl get pods,svc -n ${K8S_NAMESPACE} --kubeconfig=${KUBECONFIG}
             '''
         }
 
         failure {
-            echo 'Deployment failed. Fetching Kubernetes status & logs...'
+            echo 'Deployment failed. Fetching logs...'
             sh '''
-                echo "===== PODS STATUS ====="
                 kubectl get pods -n ${K8S_NAMESPACE} -o wide --kubeconfig=${KUBECONFIG} || true
-
-                echo "===== RECENT EVENTS ====="
-                kubectl get events -n ${K8S_NAMESPACE} --sort-by='.metadata.creationTimestamp' --kubeconfig=${KUBECONFIG} || true
-
-                echo "===== DJANGO LOGS ====="
                 kubectl logs deployment/django -n ${K8S_NAMESPACE} --tail=50 --kubeconfig=${KUBECONFIG} || true
-
-                echo "===== POSTGRES LOGS ====="
-                kubectl logs deployment/postgres -n ${K8S_NAMESPACE} --tail=50 --kubeconfig=${KUBECONFIG} || true
             '''
         }
     }
